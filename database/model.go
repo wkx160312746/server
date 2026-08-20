@@ -40,6 +40,19 @@ const (
 	RoleSpectator Role = "spectator"
 )
 
+func RoleName(role Role) string {
+	switch role {
+	case RoleOwner:
+		return "房主"
+	case RolePlayer:
+		return "玩家"
+	case RoleSpectator:
+		return "观战者"
+	default:
+		return string(role)
+	}
+}
+
 type Player struct {
 	ID     int64  `json:"id"`
 	IP     string `json:"ip"`
@@ -75,7 +88,7 @@ func (p *Player) Offline() {
 	if room != nil {
 		room.Lock()
 		defer room.Unlock()
-		broadcast(room, fmt.Sprintf("%s lost connection! \n", p.Name))
+		broadcast(room, fmt.Sprintf("%s 已断开连接。\n", p.Name))
 		if room.State == consts.RoomStateWaiting {
 			leaveRoom(room, p)
 		}
@@ -249,8 +262,8 @@ type Room struct {
 	EnableDontShuffle   bool      `json:"enableDontShuffle"`
 	EnableShowIP        bool      `json:"enableShowIP"`
 	EnableJokerAsTarget bool      `json:"enableJokerAsTarget"`
-	UndercoverNum       int       `json:"undercoverNum"`  // 卧底数量
-	BlankWordMode       bool      `json:"blankWordMode"`  // 空白词模式
+	UndercoverNum       int       `json:"undercoverNum"` // 卧底数量
+	BlankWordMode       bool      `json:"blankWordMode"` // 空白词模式
 }
 
 func (r *Room) Model() model.Room {
@@ -323,12 +336,12 @@ func (g Game) IsLandlord(playerId int64) bool {
 
 func (g Game) Team(playerId int64) string {
 	if !g.Room.EnableLandlord {
-		return "team" + strconv.Itoa(g.Groups[playerId])
+		return "队伍" + strconv.Itoa(g.Groups[playerId]+1)
 	} else {
 		if !g.IsLandlord(playerId) {
-			return "peasant"
+			return "农民"
 		} else {
-			return "landlord"
+			return "地主"
 		}
 	}
 }

@@ -10,8 +10,8 @@ type home struct{}
 
 func (*home) Next(player *database.Player) (consts.StateID, error) {
 	buf := bytes.Buffer{}
-	buf.WriteString("1.Join\n")
-	buf.WriteString("2.New\n")
+	buf.WriteString("1. 加入房间\n")
+	buf.WriteString("2. 创建房间\n")
 	err := player.WriteString(buf.String())
 	if err != nil {
 		return 0, player.WriteError(err)

@@ -27,8 +27,8 @@ func (g *RunFastGame) Next(player *database.Player) (consts.StateID, error) {
 	}
 	game := room.Game.(*database.Game)
 	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf("Game starting!\n"))
-	buf.WriteString(fmt.Sprintf("Your pokers: %s\n", game.Pokers[player.ID].String()))
+	buf.WriteString("游戏开始！\n")
+	buf.WriteString(fmt.Sprintf("你的手牌：%s\n", game.Pokers[player.ID].String()))
 	_ = player.WriteString(buf.String())
 	loopCount := 0
 	for {
@@ -82,9 +82,9 @@ func runFastPlaying(player *database.Player, game *database.Game, master bool, p
 		buf := bytes.Buffer{}
 		buf.WriteString("\n")
 		if !master && len(game.LastPokers) > 0 {
-			buf.WriteString(fmt.Sprintf("Last player: %s (%s), played: %s\n", database.GetPlayer(game.LastPlayer).Name, game.Team(game.LastPlayer), game.LastPokers.String()))
+			buf.WriteString(fmt.Sprintf("上家：%s（%s），出牌：%s\n", database.GetPlayer(game.LastPlayer).Name, game.Team(game.LastPlayer), game.LastPokers.String()))
 		}
-		buf.WriteString(fmt.Sprintf("Timeout: %ds, pokers: %s\n", int(timeout.Seconds()), game.Pokers[player.ID].String()))
+		buf.WriteString(fmt.Sprintf("剩余时间：%d 秒，你的手牌：%s\n", int(timeout.Seconds()), game.Pokers[player.ID].String()))
 		_ = player.WriteString(buf.String())
 		before := time.Now().Unix()
 		pokers := game.Pokers[player.ID]
@@ -93,7 +93,7 @@ func runFastPlaying(player *database.Player, game *database.Game, master bool, p
 			list := poker.RunFastComparativeFaces(*game.LastFaces, game.Pokers[player.ID], rule.RunFastRules)
 			if len(list) == 0 {
 				nextPlayer := database.GetPlayer(game.NextPlayer(player.ID))
-				database.Broadcast(player.RoomID, fmt.Sprintf("%s auto passed, next %s\n", player.Name, nextPlayer.Name))
+				database.Broadcast(player.RoomID, fmt.Sprintf("%s 无牌可压，系统自动跳过，下一位：%s。\n", player.Name, nextPlayer.Name))
 				game.States[nextPlayer.ID] <- statePlay
 				return nil
 			}
@@ -139,7 +139,7 @@ func runFastPlaying(player *database.Player, game *database.Game, master bool, p
 					continue
 				} else {
 					nextPlayer := database.GetPlayer(game.NextPlayer(player.ID))
-					database.Broadcast(player.RoomID, fmt.Sprintf("%s passed, next %s\n", player.Name, nextPlayer.Name))
+					database.Broadcast(player.RoomID, fmt.Sprintf("%s 选择不出，下一位：%s。\n", player.Name, nextPlayer.Name))
 					game.States[nextPlayer.ID] <- statePlay
 					return nil
 				}
@@ -183,7 +183,7 @@ func runFastPlaying(player *database.Player, game *database.Game, master bool, p
 		//聊天開啓才能說話
 		if invalid {
 			if game.Room.EnableChat {
-				database.BroadcastChat(player, fmt.Sprintf("%s say: %s\n", player.Name, ans))
+				database.BroadcastChat(player, fmt.Sprintf("%s 说：%s\n", player.Name, ans))
 				continue
 			} else {
 				_ = player.WriteString(fmt.Sprintf("%s\n", consts.ErrorsChatUnopened.Error()))
@@ -237,7 +237,7 @@ func runFastPlaying(player *database.Player, game *database.Game, master bool, p
 		game.LastPokers = sells
 		game.Discards = append(game.Discards, sells...)
 		if len(pokers) == 0 {
-			database.Broadcast(player.RoomID, fmt.Sprintf("%s played %s, won the game! \n", player.Name, sells.OaaString()))
+			database.Broadcast(player.RoomID, fmt.Sprintf("%s 打出 %s，赢得本局！\n", player.Name, sells.OaaString()))
 			room := database.GetRoom(player.RoomID)
 			if room != nil {
 				room.Game = nil
@@ -251,12 +251,12 @@ func runFastPlaying(player *database.Player, game *database.Game, master bool, p
 		if master {
 			playTimes--
 			if playTimes > 0 {
-				database.Broadcast(player.RoomID, fmt.Sprintf("%s played %s\n", player.Name, sells.OaaString()))
+				database.Broadcast(player.RoomID, fmt.Sprintf("%s 打出 %s。\n", player.Name, sells.OaaString()))
 				return runFastPlaying(player, game, master, playTimes)
 			}
 		}
 		nextPlayer := database.GetPlayer(game.NextPlayer(player.ID))
-		database.Broadcast(player.RoomID, fmt.Sprintf("%s played %s, next %s\n", player.Name, sells.OaaString(), nextPlayer.Name))
+		database.Broadcast(player.RoomID, fmt.Sprintf("%s 打出 %s，下一位：%s。\n", player.Name, sells.OaaString(), nextPlayer.Name))
 		game.States[nextPlayer.ID] <- statePlay
 		return nil
 	}
@@ -264,7 +264,7 @@ func runFastPlaying(player *database.Player, game *database.Game, master bool, p
 
 func runFastHandlePlay(player *database.Player, game *database.Game) error {
 	master := player.ID == game.LastPlayer || game.LastPlayer == 0
-	database.Broadcast(player.RoomID, fmt.Sprintf("%s turn to play\n", player.Name))
+	database.Broadcast(player.RoomID, fmt.Sprintf("轮到 %s 出牌。\n", player.Name))
 	return runFastPlaying(player, game, master, game.PlayTimes[player.ID])
 }
 
@@ -337,7 +337,7 @@ func InitRunFastGame(room *database.Room, rules poker.Rules) (*database.Game, er
 
 func runFastViewGame(game *database.Game, currPlayer *database.Player) {
 	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf("%-20s%-10s%-10s\n", "Name", "Pokers", "Identity"))
+	buf.WriteString(fmt.Sprintf("%-20s%-10s%-10s\n", "玩家", "手牌数", "身份"))
 	for _, id := range game.Players {
 		player := database.GetPlayer(id)
 		flag := ""
@@ -350,11 +350,11 @@ func runFastViewGame(game *database.Game, currPlayer *database.Player) {
 	for _, currPoker := range game.Pokers[currPlayer.ID] {
 		currKeys[currPoker.Key]++
 	}
-	buf.WriteString("Pokers	: ")
+	buf.WriteString("牌面：")
 	for _, i := range consts.RunFastMnemonicSorted {
 		buf.WriteString(poker.GetDesc(i) + "  ")
 	}
-	buf.WriteString("\nSurplus : ")
+	buf.WriteString("\n剩余：")
 	for _, i := range consts.RunFastMnemonicSorted {
 		buf.WriteString(strconv.Itoa(game.Mnemonic[i]-currKeys[i]) + "  ")
 		if i == 10 {

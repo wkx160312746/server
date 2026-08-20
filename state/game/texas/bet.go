@@ -22,7 +22,7 @@ func bet(player *database.Player, game *database.Texas) error {
 		return nextPlayer(player, game, stateBet)
 	}
 
-	database.Broadcast(player.RoomID, fmt.Sprintf("%s's turn to bet\n", player.Name), player.ID)
+	database.Broadcast(player.RoomID, fmt.Sprintf("轮到 %s 下注。\n", player.Name), player.ID)
 
 	timeout := consts.BetTimeout
 	loopCount := 0
@@ -34,22 +34,22 @@ func bet(player *database.Player, game *database.Texas) error {
 		before := time.Now().Unix()
 
 		buf := bytes.Buffer{}
-		buf.WriteString(fmt.Sprintf("Your hand: %s\n", texasPlayer.Hand.TexasString()))
+		buf.WriteString(fmt.Sprintf("你的手牌：%s\n", texasPlayer.Hand.TexasString()))
 		for _, p := range game.Players {
-			status := "betting"
+			status := "下注中"
 			if p.Folded {
-				status = "folded"
+				status = "已弃牌"
 			}
 			if p.AllIn {
-				status = "all in"
+				status = "全下"
 			}
 			name := p.Name
 			if p.ID == player.ID {
-				name = "* You"
+				name = "* 你"
 			}
-			buf.WriteString(fmt.Sprintf("%s amount %d, total bets %d, status: %s\n", name, p.Amount(), p.Bets, status))
+			buf.WriteString(fmt.Sprintf("%s 剩余积分：%d，累计下注：%d，状态：%s\n", name, p.Amount(), p.Bets, status))
 		}
-		buf.WriteString("What do you want to do? (call/raise/fold/check/allin)\n")
+		buf.WriteString("请选择操作（call/raise/fold/check/allin）：\n")
 		_ = player.WriteString(buf.String())
 		ans, err := player.AskForString(timeout)
 		if err != nil {
@@ -62,55 +62,55 @@ func bet(player *database.Player, game *database.Texas) error {
 		switch instructions[0] {
 		case "call":
 			if minCall == 0 {
-				_ = player.WriteString("You don't need to call, wound you like to check?\n")
+				_ = player.WriteString("当前无需跟注，你可以输入 check 过牌。\n")
 				continue
 			}
 			if texasPlayer.Amount() < minCall {
-				_ = player.WriteString("You don't have enough money to call\n")
+				_ = player.WriteString("你的积分不足，无法跟注。\n")
 				continue
 			}
 			game.Bet(texasPlayer, minCall)
-			database.Broadcast(player.RoomID, fmt.Sprintf("%s call, bet %d\n", player.Name, minCall))
+			database.Broadcast(player.RoomID, fmt.Sprintf("%s 跟注 %d。\n", player.Name, minCall))
 		case "raise":
 			if len(instructions) <= 1 || instructions[1] == "" {
-				_ = player.WriteString("Please input the amount you want to raise\n")
+				_ = player.WriteString("请输入要加注的金额，例如：raise 100。\n")
 				continue
 			}
 			betAmount, err := cast.ToUintE(instructions[1])
 			if err != nil {
-				_ = player.WriteString("Invalid amount\n")
+				_ = player.WriteString("金额无效。\n")
 				continue
 			}
 			if betAmount < minCall {
-				_ = player.WriteString(fmt.Sprintf("The amount you want to raise is less than the minimum call amount %d\n", minCall))
+				_ = player.WriteString(fmt.Sprintf("加注金额不能低于当前最低跟注金额 %d。\n", minCall))
 				continue
 			}
 			if texasPlayer.Amount() < betAmount {
-				_ = player.WriteString("You don't have enough money to raise\n")
+				_ = player.WriteString("你的积分不足，无法加注。\n")
 				continue
 			}
 			game.Bet(texasPlayer, betAmount)
-			database.Broadcast(player.RoomID, fmt.Sprintf("%s raise, bet %d\n", player.Name, betAmount))
+			database.Broadcast(player.RoomID, fmt.Sprintf("%s 加注 %d。\n", player.Name, betAmount))
 		case "fold":
 			texasPlayer.Folded = true
 			game.Folded++
-			database.Broadcast(player.RoomID, fmt.Sprintf("%s fold\n", player.Name))
+			database.Broadcast(player.RoomID, fmt.Sprintf("%s 弃牌。\n", player.Name))
 			if game.Folded == len(game.Players)-1 {
 				return settlementRound(game)
 			}
 		case "check":
 			if texasPlayer.Bets < game.MaxBetAmount {
-				_ = player.WriteString("You can't check, because someone else bet higher than you\n")
+				_ = player.WriteString("其他玩家的下注更高，你不能过牌。\n")
 				continue
 			}
 			game.Bet(texasPlayer, 0)
-			database.Broadcast(player.RoomID, fmt.Sprintf("%s check\n", player.Name))
+			database.Broadcast(player.RoomID, fmt.Sprintf("%s 过牌。\n", player.Name))
 		case "allin":
 			betAmount := texasPlayer.Amount()
 			game.Bet(texasPlayer, betAmount)
-			database.Broadcast(player.RoomID, fmt.Sprintf("%s all in, bet %d\n", player.Name, betAmount))
+			database.Broadcast(player.RoomID, fmt.Sprintf("%s 全下，共下注 %d。\n", player.Name, betAmount))
 		default:
-			database.BroadcastChat(player, fmt.Sprintf("%s [%s] say: %s\n", player.Name, player.Role, ans))
+			database.BroadcastChat(player, fmt.Sprintf("%s [%s] 说：%s\n", player.Name, database.RoleName(player.Role), ans))
 			continue
 		}
 		break

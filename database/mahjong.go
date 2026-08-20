@@ -65,16 +65,16 @@ func (p *MahjongPlayer) NickName() string {
 
 func (mp *MahjongPlayer) OnPlayTile(payload event.PlayTilePayload) {
 	p := GetPlayer(mp.ID)
-	p.WriteString(fmt.Sprintf("You play %s ! \n", tile.Tile(payload.Tile)))
-	Broadcast(p.RoomID, fmt.Sprintf("%s PlayTile %s !\n", payload.PlayerName, tile.Tile(payload.Tile)), p.ID)
+	p.WriteString(fmt.Sprintf("你打出了：%s\n", tile.Tile(payload.Tile)))
+	Broadcast(p.RoomID, fmt.Sprintf("%s 打出了 %s。\n", payload.PlayerName, tile.Tile(payload.Tile)), p.ID)
 }
 
 func (mp *MahjongPlayer) Take(tiles []int, gameState game.State) (int, []int, error) {
 	p := GetPlayer(mp.ID)
-	Broadcast(p.RoomID, fmt.Sprintf("It's %s take mahjong! \n", p.Name), p.ID)
+	Broadcast(p.RoomID, fmt.Sprintf("轮到 %s 摸牌。\n", p.Name), p.ID)
 	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf("It's your take mahjong, %s! \n", p.Name))
-	buf.WriteString(gameState.String())
+	buf.WriteString(fmt.Sprintf("%s，轮到你摸牌了！\n", p.Name))
+	buf.WriteString(mahjongStateText(gameState))
 	p.WriteString(buf.String())
 	askBuf := bytes.Buffer{}
 	tileOptions := make(map[string]*OP)
@@ -83,7 +83,7 @@ func (mp *MahjongPlayer) Take(tiles []int, gameState game.State) (int, []int, er
 		for _, pv := range pvs {
 			switch pv {
 			case consts.GANG:
-				askBuf.WriteString("You can 杠!!!\n")
+				askBuf.WriteString("你可以杠牌！\n")
 				label := strconv.Itoa(labelCounter)
 				ts := []int{gameState.LastPlayedTile, gameState.LastPlayedTile, gameState.LastPlayedTile}
 				tileOptions[label] = &OP{
@@ -93,7 +93,7 @@ func (mp *MahjongPlayer) Take(tiles []int, gameState game.State) (int, []int, er
 				askBuf.WriteString(fmt.Sprintf("%s. %s \n", circled(labelCounter), tile.ToTileString(ts)))
 				labelCounter++
 			case consts.PENG:
-				askBuf.WriteString("You can 碰!!!\n")
+				askBuf.WriteString("你可以碰牌！\n")
 				label := strconv.Itoa(labelCounter)
 				ts := []int{gameState.LastPlayedTile, gameState.LastPlayedTile}
 				tileOptions[label] = &OP{
@@ -103,7 +103,7 @@ func (mp *MahjongPlayer) Take(tiles []int, gameState game.State) (int, []int, er
 				askBuf.WriteString(fmt.Sprintf("%s. %s \n", circled(labelCounter), tile.ToTileString(ts)))
 				labelCounter++
 			case consts.CHI:
-				askBuf.WriteString("You can 吃!!!\n")
+				askBuf.WriteString("你可以吃牌！\n")
 				for _, ts := range card.CanChiTiles(tiles, gameState.LastPlayedTile) {
 					label := strconv.Itoa(labelCounter)
 					tileOptions[label] = &OP{
@@ -117,7 +117,7 @@ func (mp *MahjongPlayer) Take(tiles []int, gameState game.State) (int, []int, er
 		}
 	}
 	label := strconv.Itoa(labelCounter)
-	askBuf.WriteString(fmt.Sprintf("%s. %s \n", circled(labelCounter), "no"))
+	askBuf.WriteString(fmt.Sprintf("%s. 不操作\n", circled(labelCounter)))
 	tileOptions[label] = &OP{
 		operation: 0,
 		tiles:     []int{},
@@ -134,7 +134,7 @@ func (mp *MahjongPlayer) Take(tiles []int, gameState game.State) (int, []int, er
 		if err != nil {
 			switch err {
 			case rconsts.ErrorsExist:
-				p.WriteString("Don't quit a good game！\n")
+				p.WriteString("请勿中途退出本局游戏。\n")
 				selectedLabel = "E"
 			case rconsts.ErrorsTimeout:
 				// Default to "no" action (skip peng/chi/gang) on timeout
@@ -145,7 +145,7 @@ func (mp *MahjongPlayer) Take(tiles []int, gameState game.State) (int, []int, er
 		}
 		selected, found := tileOptions[strings.ToUpper(selectedLabel)]
 		if !found {
-			BroadcastChat(p, fmt.Sprintf("%s say: %s\n", p.Name, selectedLabel))
+			BroadcastChat(p, fmt.Sprintf("%s 说：%s\n", p.Name, selectedLabel))
 			continue
 		}
 		return selected.operation, selected.tiles, nil
@@ -154,13 +154,13 @@ func (mp *MahjongPlayer) Take(tiles []int, gameState game.State) (int, []int, er
 
 func (mp *MahjongPlayer) Play(tiles []int, gameState game.State) (int, error) {
 	p := GetPlayer(mp.ID)
-	Broadcast(p.RoomID, fmt.Sprintf("It's %s turn! \n", p.Name), p.ID)
+	Broadcast(p.RoomID, fmt.Sprintf("轮到 %s 出牌。\n", p.Name), p.ID)
 	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf("It's your turn, %s! \n", p.Name))
-	buf.WriteString(gameState.String())
+	buf.WriteString(fmt.Sprintf("%s，轮到你出牌了！\n", p.Name))
+	buf.WriteString(mahjongStateText(gameState))
 	p.WriteString(buf.String())
 	askBuf := bytes.Buffer{}
-	askBuf.WriteString("Select a tile to play:\n")
+	askBuf.WriteString("请选择要打出的牌（输入对应编号）：\n")
 	tileOptions := make(map[string]int)
 	sort.Ints(tiles)
 	for idx, i := range tiles {
@@ -186,7 +186,7 @@ func (mp *MahjongPlayer) Play(tiles []int, gameState game.State) (int, error) {
 		if err != nil {
 			switch err {
 			case rconsts.ErrorsExist:
-				p.WriteString("Don't quit a good game！\n")
+				p.WriteString("请勿中途退出本局游戏。\n")
 				selectedLabel = "E"
 			case rconsts.ErrorsTimeout:
 				// Default to the last tile (least likely to be useful) on timeout
@@ -197,7 +197,7 @@ func (mp *MahjongPlayer) Play(tiles []int, gameState game.State) (int, error) {
 		}
 		selectedCard, found := tileOptions[strings.ToUpper(selectedLabel)]
 		if !found {
-			BroadcastChat(p, fmt.Sprintf("%s say: %s\n", p.Name, selectedLabel))
+			BroadcastChat(p, fmt.Sprintf("%s 说：%s\n", p.Name, selectedLabel))
 			continue
 		}
 		mp.OnPlayTile(event.PlayTilePayload{
@@ -206,4 +206,18 @@ func (mp *MahjongPlayer) Play(tiles []int, gameState game.State) (int, error) {
 		})
 		return selectedCard, nil
 	}
+}
+
+func mahjongStateText(state game.State) string {
+	lines := []string{fmt.Sprintf("已打出的牌：%s", tile.ToTileString(state.PlayedTiles))}
+	if state.LastPlayer != nil {
+		lines = append(lines, fmt.Sprintf("%s 打出了：%s", state.LastPlayer.Name(), tile.Tile(state.LastPlayedTile)))
+	}
+	hand := append([]int(nil), state.CurrentPlayerHand...)
+	if len(hand) > 0 {
+		lines = append(lines, fmt.Sprintf("你摸到的牌：%s", tile.Tile(hand[len(hand)-1])))
+	}
+	sort.Ints(hand)
+	lines = append(lines, fmt.Sprintf("你的手牌：%s\n", tile.ToTileString(hand)))
+	return strings.Join(lines, "\n")
 }

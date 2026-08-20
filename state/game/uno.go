@@ -3,6 +3,8 @@ package game
 import (
 	"bytes"
 	"fmt"
+	"strings"
+
 	"github.com/feel-easy/uno/card/color"
 	"github.com/feel-easy/uno/event"
 	"github.com/feel-easy/uno/game"
@@ -21,12 +23,12 @@ func (g *Uno) Next(player *database.Player) (consts.StateID, error) {
 	game := room.Game.(*database.UnoGame)
 	buf := bytes.Buffer{}
 	buf.WriteString(fmt.Sprintf(
-		"WELCOME TO %s%s%s!!!\n",
+		"欢迎来到 %s%s%s！\n",
 		color.Red.Paint("U"),
 		color.Yellow.Paint("N"),
 		color.Blue.Paint("O"),
 	))
-	buf.WriteString(fmt.Sprintf("Your Cards: %s\n", game.Game.GetPlayerCards(int(player.ID))))
+	buf.WriteString(fmt.Sprintf("你的手牌：%s\n", game.Game.GetPlayerCards(int(player.ID))))
 	_ = player.WriteString(buf.String())
 	loopCount := 0
 	for {
@@ -42,7 +44,7 @@ func (g *Uno) Next(player *database.Player) (consts.StateID, error) {
 		state := <-game.States[int(player.ID)]
 		switch state {
 		case stateFirstCard:
-			if msg := game.Game.PlayFirstCard(); msg != "" {
+			if msg := translateUnoAction(game.Game.PlayFirstCard()); msg != "" {
 				database.Broadcast(room.ID, msg)
 			}
 			pc := game.Game.Players().Next()
@@ -90,11 +92,11 @@ func handlePlayUno(room *database.Room, player *database.Player, game *database.
 		PlayerName: p.Name(),
 		Card:       card,
 	})
-	if msg := game.Game.PerformCardActions(card); msg != "" {
+	if msg := translateUnoAction(game.Game.PerformCardActions(card)); msg != "" {
 		database.Broadcast(room.ID, msg)
 	}
 	if p.NoCards() || game.NeedExit() {
-		database.Broadcast(room.ID, fmt.Sprintf("%s wins! \n", p.Name()))
+		database.Broadcast(room.ID, fmt.Sprintf("%s 赢得本局！\n", p.Name()))
 		room.Game = nil
 		room.State = consts.RoomStateWaiting
 		for _, playerId := range game.Players {
@@ -105,6 +107,29 @@ func handlePlayUno(room *database.Room, player *database.Player, game *database.
 	pc := game.Game.Players().Next()
 	game.States[pc.ID()] <- statePlay
 	return nil
+}
+
+func translateUnoAction(msg string) string {
+	const skippedSuffix = "'s turn skipped!"
+	translated := make([]string, 0)
+	for _, line := range strings.Split(msg, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "":
+			continue
+		case line == "Turn order has been reversed!":
+			translated = append(translated, "出牌顺序已反转！")
+		case strings.HasSuffix(line, skippedSuffix):
+			name := strings.TrimSuffix(line, skippedSuffix)
+			translated = append(translated, fmt.Sprintf("%s 的回合被跳过！", name))
+		default:
+			translated = append(translated, line)
+		}
+	}
+	if len(translated) == 0 {
+		return ""
+	}
+	return strings.Join(translated, "\n") + "\n"
 }
 
 func InitUnoGame(room *database.Room) (*database.UnoGame, error) {

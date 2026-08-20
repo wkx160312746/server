@@ -332,7 +332,7 @@ func (g *Undercover) nextPlayerOrPhase(game *database.Undercover) {
 		}
 
 		if allTiebreakDescribed {
-			// 平票玩家都已描述完毕，进入平票 PK 投票阶段
+			// 平票玩家都已描述完毕，进入平票加赛投票阶段
 			if len(game.VoteTargets) == 0 {
 				game.VoteTargets = append([]int64(nil), game.TiebreakPlayers...)
 			}
@@ -426,7 +426,7 @@ func (g *Undercover) handleVote(player *database.Player, game *database.Undercov
 	}
 	if !canVote {
 		if tiebreakRestricted {
-			_ = player.WriteString("本轮平票 PK 由其他玩家投票，请等待结果...\n")
+			_ = player.WriteString("本轮平票加赛由其他玩家投票，请等待结果...\n")
 		}
 		return nil
 	}
@@ -447,7 +447,7 @@ func (g *Undercover) handleVote(player *database.Player, game *database.Undercov
 
 	buf := bytes.Buffer{}
 	if tiebreakRestricted {
-		buf.WriteString("\n>>> 平票 PK 投票环节\n")
+		buf.WriteString("\n>>> 平票加赛投票环节\n")
 	} else {
 		buf.WriteString("\n>>> 投票环节\n")
 	}

@@ -51,12 +51,12 @@ const (
 	RoomStateWaiting = 1
 	RoomStateRunning = 2
 
-	GameTypeClassic = 1
-	GameTypeLaiZi   = 2
-	GameTypeSkill   = 3
-	GameTypeRunFast = 4
-	GameTypeTexas   = 5
-	GameTypeMahjong = 6
+	GameTypeClassic    = 1
+	GameTypeLaiZi      = 2
+	GameTypeSkill      = 3
+	GameTypeRunFast    = 4
+	GameTypeTexas      = 5
+	GameTypeMahjong    = 6
 	GameTypeLiar       = 7
 	GameTypeUno        = 8
 	GameTypeUndercover = 9
@@ -69,16 +69,16 @@ const (
 
 // Room properties.
 const (
-	RoomPropsDotShuffle     = "ds"
-	RoomPropsLaiZi          = "lz"
-	RoomPropsSkill          = "sk"
-	RoomPropsPassword       = "pwd"
-	RoomPropsPlayerNum      = "pn"
-	RoomPropsChat           = "ct"
-	RoomPropsShowIP         = "ip"
-	RoomPropsJokerAsTarget  = "jt"
-	RoomPropsUndercoverNum  = "ucn" // 卧底数量
-	RoomPropsBlankWordMode  = "bwm" // 空白词模式
+	RoomPropsDotShuffle    = "ds"
+	RoomPropsLaiZi         = "lz"
+	RoomPropsSkill         = "sk"
+	RoomPropsPassword      = "pwd"
+	RoomPropsPlayerNum     = "pn"
+	RoomPropsChat          = "ct"
+	RoomPropsShowIP        = "ip"
+	RoomPropsJokerAsTarget = "jt"
+	RoomPropsUndercoverNum = "ucn" // 卧底数量
+	RoomPropsBlankWordMode = "bwm" // 空白词模式
 )
 
 var MnemonicSorted = []int{15, 14, 2, 1, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3}
@@ -100,36 +100,36 @@ func NewErr(code int, exit bool, msg string) Error {
 }
 
 var (
-	ErrorsExist                   = NewErr(1, true, "Exist. ")
-	ErrorsChanClosed              = NewErr(1, true, "Chan closed. ")
-	ErrorsTimeout                 = NewErr(1, false, "Timeout. ")
-	ErrorsInputInvalid            = NewErr(1, false, "Input invalid. ")
-	ErrorsChatUnopened            = NewErr(1, false, "Chat disabled. ")
-	ErrorsChatUnopenedDuringGame  = NewErr(1, false, "Chat disabled during game. ")
-	ErrorsAuthFail                = NewErr(1, true, "Auth fail. ")
-	ErrorsRoomInvalid             = NewErr(1, true, "Room invalid. ")
-	ErrorsGameTypeInvalid         = NewErr(1, false, "Game type invalid. ")
-	ErrorsRoomPlayersIsFull       = NewErr(1, false, "Room players is fill. ")
-	ErrorsRoomPassword            = NewErr(1, false, "Sorry! Password incorrect! ")
-	ErrorsJoinFailForRoomRunning  = NewErr(1, false, "Join fail, room is running. ")
-	ErrorsJoinFailForKicked       = NewErr(1, false, "Join fail, you have been kicked from this room. ")
-	ErrorsGamePlayersInvalid      = NewErr(1, false, "Game players invalid. ")
-	ErrorsPokersFacesInvalid      = NewErr(1, false, "Pokers faces invalid. ")
-	ErrorsHaveToPlay              = NewErr(1, false, "Have to play. ")
-	ErrorsMustHaveToPlay          = NewErr(1, false, "There is a hand that can be played and must be played. ")
-	ErrorsEndToPlay               = NewErr(1, false, "Can only come out at the end. ")
-	ErrorsUnknownTexasRound       = NewErr(1, false, "Unknown texas round. ")
-	ErrorsGamePlayersInsufficient = NewErr(1, false, "Game players insufficient. ")
-	ErrorsCannotKickYourself      = NewErr(1, false, "Cannot kick yourself. ")
-	ErrorsPlayerNotInRoom         = NewErr(1, true, "Player not in room. ")
-	GameTypes = map[int]string{
+	ErrorsExist                   = NewErr(1, true, "资源不存在。")
+	ErrorsChanClosed              = NewErr(1, true, "消息通道已关闭。")
+	ErrorsTimeout                 = NewErr(1, false, "操作超时。")
+	ErrorsInputInvalid            = NewErr(1, false, "输入无效。")
+	ErrorsChatUnopened            = NewErr(1, false, "房间聊天已关闭。")
+	ErrorsChatUnopenedDuringGame  = NewErr(1, false, "游戏进行中不能聊天。")
+	ErrorsAuthFail                = NewErr(1, true, "认证失败。")
+	ErrorsRoomInvalid             = NewErr(1, true, "房间不存在或已失效。")
+	ErrorsGameTypeInvalid         = NewErr(1, false, "游戏类型无效。")
+	ErrorsRoomPlayersIsFull       = NewErr(1, false, "房间人数已满。")
+	ErrorsRoomPassword            = NewErr(1, false, "房间密码错误。")
+	ErrorsJoinFailForRoomRunning  = NewErr(1, false, "加入失败，房间正在游戏中。")
+	ErrorsJoinFailForKicked       = NewErr(1, false, "加入失败，你已被该房间踢出。")
+	ErrorsGamePlayersInvalid      = NewErr(1, false, "当前玩家人数不符合开局要求。")
+	ErrorsPokersFacesInvalid      = NewErr(1, false, "牌型无效。")
+	ErrorsHaveToPlay              = NewErr(1, false, "当前回合必须出牌。")
+	ErrorsMustHaveToPlay          = NewErr(1, false, "存在可以压过上家的牌，必须出牌。")
+	ErrorsEndToPlay               = NewErr(1, false, "该牌型只能在最后一手打出。")
+	ErrorsUnknownTexasRound       = NewErr(1, false, "未知的德州扑克回合。")
+	ErrorsGamePlayersInsufficient = NewErr(1, false, "玩家人数不足，无法开始游戏。")
+	ErrorsCannotKickYourself      = NewErr(1, false, "不能踢出自己。")
+	ErrorsPlayerNotInRoom         = NewErr(1, true, "玩家不在房间中。")
+	GameTypes                     = map[int]string{
 		GameTypeClassic:    "斗地主",
 		GameTypeLaiZi:      "斗地主-癞子版",
 		GameTypeSkill:      "斗地主-大招版",
 		GameTypeRunFast:    "跑得快",
 		GameTypeTexas:      "德州扑克",
-		GameTypeMahjong:    "Mahjong",
-		GameTypeLiar:       "liar's bar",
+		GameTypeMahjong:    "麻将",
+		GameTypeLiar:       "骗子酒馆",
 		GameTypeUndercover: "谁是卧底",
 	}
 	GameTypesIds = []int{
@@ -143,7 +143,7 @@ var (
 		GameTypeUndercover,
 	}
 	RoomStates = map[int]string{
-		RoomStateWaiting: "Waiting",
-		RoomStateRunning: "Running",
+		RoomStateWaiting: "等待中",
+		RoomStateRunning: "游戏中",
 	}
 )

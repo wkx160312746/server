@@ -39,19 +39,19 @@ func (g *Game) Next(player *database.Player) (consts.StateID, error) {
 	if game.Room.EnableLaiZi {
 		if game.Room.EnableSkill {
 			game.Pokers[player.ID].SetOaa(game.Universals...)
-			buf.WriteString(fmt.Sprintf("Game starting! Universals: %s %s\n", poker.GetDesc(game.Universals[0]), poker.GetDesc(game.Universals[1])))
+			buf.WriteString(fmt.Sprintf("游戏开始！本局癞子牌：%s %s\n", poker.GetDesc(game.Universals[0]), poker.GetDesc(game.Universals[1])))
 		} else {
 			game.Pokers[player.ID].SetOaa(game.Universals[0])
-			buf.WriteString(fmt.Sprintf("Game starting! First universal: %s\n", poker.GetDesc(game.Universals[0])))
+			buf.WriteString(fmt.Sprintf("游戏开始！首张癞子牌：%s\n", poker.GetDesc(game.Universals[0])))
 		}
 		game.Pokers[player.ID].SortByOaaValue()
 	} else {
-		buf.WriteString(fmt.Sprintf("Game starting!\n"))
+		buf.WriteString("游戏开始！\n")
 	}
 	if game.Room.EnableSkill {
-		buf.WriteString(fmt.Sprintf("Got skill %s\n", skill.Skills[consts.SkillID(game.Skills[player.ID])].Name()))
+		buf.WriteString(fmt.Sprintf("你获得的技能：%s\n", skill.Skills[consts.SkillID(game.Skills[player.ID])].Name()))
 	}
-	buf.WriteString(fmt.Sprintf("Your pokers: %s\n", game.Pokers[player.ID].String()))
+	buf.WriteString(fmt.Sprintf("你的手牌：%s\n", game.Pokers[player.ID].String()))
 	_ = player.WriteString(buf.String())
 	loopCount := 0
 	for {
@@ -115,7 +115,7 @@ func handleRob(player *database.Player, game *database.Game) error {
 				log.Error(err)
 				return err
 			}
-			database.Broadcast(player.RoomID, "All players have give up the landlord, restarting...\n")
+			database.Broadcast(player.RoomID, "所有玩家都放弃抢地主，正在重新发牌……\n")
 			for _, playerId := range game.Players {
 				game.States[playerId] <- stateReset
 			}
@@ -129,13 +129,13 @@ func handleRob(player *database.Player, game *database.Game) error {
 
 			buf := bytes.Buffer{}
 			if game.Room.EnableLaiZi {
-				buf.WriteString(fmt.Sprintf("%s became landlord, got pokers: %s, last universal: %s\n", landlord.Name, game.Additional.String(), poker.GetDesc(game.Universals[1])))
+				buf.WriteString(fmt.Sprintf("%s 成为地主，获得底牌：%s，最终癞子牌：%s\n", landlord.Name, game.Additional.String(), poker.GetDesc(game.Universals[1])))
 				for _, pokers := range game.Pokers {
 					pokers.SetOaa(game.Universals...)
 					pokers.SortByOaaValue()
 				}
 			} else {
-				buf.WriteString(fmt.Sprintf("%s became landlord, got pokers: %s\n", landlord.Name, game.Additional.String()))
+				buf.WriteString(fmt.Sprintf("%s 成为地主，获得底牌：%s\n", landlord.Name, game.Additional.String()))
 			}
 			database.Broadcast(player.RoomID, buf.String())
 			game.States[landlord.ID] <- statePlay
@@ -147,7 +147,7 @@ func handleRob(player *database.Player, game *database.Game) error {
 	}
 	if game.FirstPlayer == 0 {
 		game.FirstPlayer = player.ID
-		database.Broadcast(player.RoomID, fmt.Sprintf("%s's turn to rob\n", player.Name), player.ID)
+		database.Broadcast(player.RoomID, fmt.Sprintf("轮到 %s 抢地主。\n", player.Name), player.ID)
 	}
 
 	timeout := consts.RobTimeout
@@ -158,7 +158,7 @@ func handleRob(player *database.Player, game *database.Game) error {
 			log.Infof("[handleRob] Player %d (Room %d) loop count: %d, timeout: %v, FirstRob: %d, LastRob: %d\n", player.ID, player.RoomID, loopCount, timeout, game.FirstRob, game.LastRob)
 		}
 		before := time.Now().Unix()
-		_ = player.WriteString("Are you want to become landlord? (y or n)\n")
+		_ = player.WriteString("是否抢地主？请输入 y 或 n。\n")
 		ans, err := player.AskForString(timeout)
 		if err != nil && err != consts.ErrorsExist {
 			ans = "n"
@@ -171,10 +171,10 @@ func handleRob(player *database.Player, game *database.Game) error {
 			}
 			game.LastRob = player.ID
 			game.Multiple *= 2
-			database.Broadcast(player.RoomID, fmt.Sprintf("%s rob\n", player.Name))
+			database.Broadcast(player.RoomID, fmt.Sprintf("%s 选择抢地主。\n", player.Name))
 			break
 		} else if ans == "n" {
-			database.Broadcast(player.RoomID, fmt.Sprintf("%s don't rob\n", player.Name))
+			database.Broadcast(player.RoomID, fmt.Sprintf("%s 选择不抢。\n", player.Name))
 			break
 		} else {
 			_ = player.WriteError(consts.ErrorsInputInvalid)
@@ -202,9 +202,9 @@ func playing(player *database.Player, game *database.Game, master bool, playTime
 		buf := bytes.Buffer{}
 		buf.WriteString("\n")
 		if !master && len(game.LastPokers) > 0 {
-			buf.WriteString(fmt.Sprintf("Last player: %s (%s), played: %s\n", database.GetPlayer(game.LastPlayer).Name, game.Team(game.LastPlayer), game.LastPokers.String()))
+			buf.WriteString(fmt.Sprintf("上家：%s（%s），出牌：%s\n", database.GetPlayer(game.LastPlayer).Name, game.Team(game.LastPlayer), game.LastPokers.String()))
 		}
-		buf.WriteString(fmt.Sprintf("Timeout: %ds, pokers: %s\n", int(timeout.Seconds()), game.Pokers[player.ID].String()))
+		buf.WriteString(fmt.Sprintf("剩余时间：%d 秒，你的手牌：%s\n", int(timeout.Seconds()), game.Pokers[player.ID].String()))
 		_ = player.WriteString(buf.String())
 		before := time.Now().Unix()
 		pokers := game.Pokers[player.ID]
@@ -231,7 +231,7 @@ func playing(player *database.Player, game *database.Game, master bool, playTime
 				continue
 			} else {
 				nextPlayer := database.GetPlayer(game.NextPlayer(player.ID))
-				database.Broadcast(player.RoomID, fmt.Sprintf("%s passed, next %s\n", player.Name, nextPlayer.Name))
+				database.Broadcast(player.RoomID, fmt.Sprintf("%s 选择不出，下一位：%s。\n", player.Name, nextPlayer.Name))
 				game.States[nextPlayer.ID] <- statePlay
 				return nil
 			}
@@ -278,7 +278,7 @@ func playing(player *database.Player, game *database.Game, master bool, playTime
 		//聊天開啓才能說話
 		if invalid {
 			if game.Room.EnableChat {
-				database.BroadcastChat(player, fmt.Sprintf("%s [%s] say: %s\n", player.Name, player.Role, ans))
+				database.BroadcastChat(player, fmt.Sprintf("%s [%s] 说：%s\n", player.Name, database.RoleName(player.Role), ans))
 				continue
 			} else {
 				_ = player.WriteString(fmt.Sprintf("%s\n", consts.ErrorsChatUnopened.Error()))
@@ -321,7 +321,7 @@ func playing(player *database.Player, game *database.Game, master bool, playTime
 		game.LastPokers = sells
 		game.Discards = append(game.Discards, sells...)
 		if len(pokers) == 0 {
-			database.Broadcast(player.RoomID, fmt.Sprintf("%s played %s, won the game! \n", player.Name, sells.OaaString()))
+			database.Broadcast(player.RoomID, fmt.Sprintf("%s 打出 %s，赢得本局！\n", player.Name, sells.OaaString()))
 			room := database.GetRoom(player.RoomID)
 			if room != nil {
 				room.Game = nil
@@ -335,12 +335,12 @@ func playing(player *database.Player, game *database.Game, master bool, playTime
 		if master {
 			playTimes--
 			if playTimes > 0 {
-				database.Broadcast(player.RoomID, fmt.Sprintf("%s played %s\n", player.Name, sells.OaaString()))
+				database.Broadcast(player.RoomID, fmt.Sprintf("%s 打出 %s。\n", player.Name, sells.OaaString()))
 				return playing(player, game, master, playTimes)
 			}
 		}
 		nextPlayer := database.GetPlayer(game.NextPlayer(player.ID))
-		database.Broadcast(player.RoomID, fmt.Sprintf("%s played %s, next %s\n", player.Name, sells.OaaString(), nextPlayer.Name))
+		database.Broadcast(player.RoomID, fmt.Sprintf("%s 打出 %s，下一位：%s。\n", player.Name, sells.OaaString(), nextPlayer.Name))
 		game.States[nextPlayer.ID] <- statePlay
 		return nil
 	}
@@ -348,7 +348,7 @@ func playing(player *database.Player, game *database.Game, master bool, playTime
 
 func handlePlay(player *database.Player, game *database.Game) error {
 	master := player.ID == game.LastPlayer || game.LastPlayer == 0
-	database.Broadcast(player.RoomID, fmt.Sprintf("%s turn to play\n", player.Name))
+	database.Broadcast(player.RoomID, fmt.Sprintf("轮到 %s 出牌。\n", player.Name))
 	if master && game.Room.EnableSkill {
 		sk := skill.Skills[consts.SkillID(game.Skills[player.ID])]
 		database.Broadcast(player.RoomID, fmt.Sprintf("%s \n", sk.Desc(player)))
@@ -448,7 +448,7 @@ func resetGame(game *database.Game) error {
 
 func viewGame(game *database.Game, currPlayer *database.Player) {
 	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf("%-20s%-10s%-10s\n", "Name", "Pokers", "Identity"))
+	buf.WriteString(fmt.Sprintf("%-20s%-10s%-10s\n", "玩家", "手牌数", "身份"))
 	for _, id := range game.Players {
 		player := database.GetPlayer(id)
 		flag := ""
@@ -461,11 +461,11 @@ func viewGame(game *database.Game, currPlayer *database.Player) {
 	for _, currPoker := range game.Pokers[currPlayer.ID] {
 		currKeys[currPoker.Key]++
 	}
-	buf.WriteString("Pokers  : ")
+	buf.WriteString("牌面：")
 	for _, i := range consts.MnemonicSorted {
 		buf.WriteString(poker.GetDesc(i) + "  ")
 	}
-	buf.WriteString("\nSurplus : ")
+	buf.WriteString("\n剩余：")
 	for _, i := range consts.MnemonicSorted {
 		buf.WriteString(strconv.Itoa(game.Mnemonic[i]-currKeys[i]) + "  ")
 		if i == 10 {
@@ -473,7 +473,7 @@ func viewGame(game *database.Game, currPlayer *database.Player) {
 		}
 	}
 	if game.Room.EnableLaiZi {
-		buf.WriteString("\nThe Universal pokers are: ")
+		buf.WriteString("\n本局癞子牌：")
 		for _, key := range game.Universals {
 			buf.WriteString(poker.GetDesc(key) + " ")
 		}

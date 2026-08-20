@@ -72,35 +72,35 @@ func contains(cards []card.Card, searchedCard card.Card) bool {
 
 func (up *UnoPlayer) NotifyCardsDrawn(cards []card.Card) {
 	p := getPlayer(int64(up.ID))
-	getPlayer(p.ID).WriteString(fmt.Sprintf("You drew %s!\n", cards))
+	getPlayer(p.ID).WriteString(fmt.Sprintf("你抽到了：%s\n", cards))
 }
 
 func (up *UnoPlayer) NotifyNoMatchingCardsInHand(lastPlayedCard card.Card, hand []card.Card) {
 	p := getPlayer(int64(up.ID))
 	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf("%s, none of your cards match %s! \n", p.Name, lastPlayedCard))
-	buf.WriteString(fmt.Sprintf("Your hand is %s \n", hand))
+	buf.WriteString(fmt.Sprintf("%s，你的手牌中没有可以匹配 %s 的牌。\n", p.Name, lastPlayedCard))
+	buf.WriteString(fmt.Sprintf("你的手牌：%s\n", hand))
 	getPlayer(p.ID).WriteString(buf.String())
 }
 
 func (up *UnoPlayer) OnFirstCardPlayed(payload event.FirstCardPlayedPayload) {
 	p := getPlayer(int64(up.ID))
-	Broadcast(p.RoomID, fmt.Sprintf("First card is %s\n", payload.Card))
+	Broadcast(p.RoomID, fmt.Sprintf("首张牌是：%s\n", payload.Card))
 }
 
 func (up *UnoPlayer) OnCardPlayed(payload event.CardPlayedPayload) {
 	p := getPlayer(int64(up.ID))
-	Broadcast(p.RoomID, fmt.Sprintf("%s played %s!\n", payload.PlayerName, payload.Card))
+	Broadcast(p.RoomID, fmt.Sprintf("%s 打出 %s。\n", payload.PlayerName, payload.Card))
 }
 
 func (up *UnoPlayer) OnColorPicked(payload event.ColorPickedPayload) {
 	p := getPlayer(int64(up.ID))
-	Broadcast(p.RoomID, fmt.Sprintf("%s picked color %s!\n", payload.PlayerName, payload.Color))
+	Broadcast(p.RoomID, fmt.Sprintf("%s 选择了颜色 %s。\n", payload.PlayerName, payload.Color))
 }
 
 func (up *UnoPlayer) OnPlayerPassed(payload event.PlayerPassedPayload) {
 	p := getPlayer(int64(up.ID))
-	Broadcast(p.RoomID, fmt.Sprintf("%s passed!\n", payload.PlayerName))
+	Broadcast(p.RoomID, fmt.Sprintf("%s 跳过了本回合。\n", payload.PlayerName))
 }
 
 func (up *UnoPlayer) PickColor(gameState game.State) color.Color {
@@ -112,24 +112,18 @@ func (up *UnoPlayer) PickColor(gameState game.State) color.Color {
 			log.Infof("[UnoPlayer.PickColor] Player %d loop count: %d\n", up.ID, loopCount)
 		}
 		p = getPlayer(p.ID)
-		p.WriteString(fmt.Sprintf(
-			"Select a color: %s, %s, %s or %s ? \n",
-			color.Red,
-			color.Yellow,
-			color.Green,
-			color.Blue,
-		))
+		p.WriteString("请选择颜色（输入英文缩写）：红色(r)、黄色(y)、绿色(g)或蓝色(b)。\n")
 		colorName, err := p.AskForString(consts.PlayTimeout)
 		if err != nil {
 			if err == consts.ErrorsTimeout {
 				return color.Red
 			}
-			p.WriteString(fmt.Sprintf("Unknown color '%s' \n", colorName))
+			p.WriteString(fmt.Sprintf("无法识别颜色 %q，请输入 r、y、g 或 b。\n", colorName))
 			continue
 		}
 		chosenColor, err := color.ByName(strings.ToLower(colorName))
 		if err != nil {
-			p.WriteString(fmt.Sprintf("Unknown color '%s' \n", colorName))
+			p.WriteString(fmt.Sprintf("无法识别颜色 %q，请输入 r、y、g 或 b。\n", colorName))
 			continue
 		}
 		return chosenColor
@@ -138,10 +132,10 @@ func (up *UnoPlayer) PickColor(gameState game.State) color.Color {
 
 func (up *UnoPlayer) Play(playableCards []card.Card, gameState game.State) (card.Card, error) {
 	p := getPlayer(int64(up.ID))
-	Broadcast(p.RoomID, fmt.Sprintf("It's %s turn! \n", p.Name), p.ID)
+	Broadcast(p.RoomID, fmt.Sprintf("轮到 %s 出牌。\n", p.Name), p.ID)
 	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf("It's your turn, %s! \n", p.Name))
-	buf.WriteString(gameState.String())
+	buf.WriteString(fmt.Sprintf("%s，轮到你出牌了！\n", p.Name))
+	buf.WriteString(unoStateText(gameState))
 	p.WriteString(buf.String())
 	runeSequence := runeSequence{}
 	cardOptions := make(map[string]card.Card)
@@ -149,7 +143,7 @@ func (up *UnoPlayer) Play(playableCards []card.Card, gameState game.State) (card
 		label := string(runeSequence.next())
 		cardOptions[label] = card
 	}
-	cardSelectionLines := []string{"Select a card to play:"}
+	cardSelectionLines := []string{"请选择要打出的牌（输入对应字母）："}
 	for label, card := range cardOptions {
 		cardSelectionLines = append(cardSelectionLines, fmt.Sprintf("%s %s", label, card))
 	}
@@ -172,13 +166,24 @@ func (up *UnoPlayer) Play(playableCards []card.Card, gameState game.State) (card
 		}
 		selectedCard, found := cardOptions[strings.ToUpper(selectedLabel)]
 		if !found {
-			BroadcastChat(p, fmt.Sprintf("%s say: %s\n", p.Name, selectedLabel))
+			BroadcastChat(p, fmt.Sprintf("%s 说：%s\n", p.Name, selectedLabel))
 			continue
 		}
 		if !contains(playableCards, selectedCard) {
-			p.WriteString(fmt.Sprintf("Cheat detected! Card %s is not in %s's hand! \n", selectedCard, p.Name))
+			p.WriteString(fmt.Sprintf("出牌无效：%s 不在 %s 的手牌中。\n", selectedCard, p.Name))
 			continue
 		}
 		return selectedCard, nil
 	}
+}
+
+func unoStateText(state game.State) string {
+	lines := []string{fmt.Sprintf("上一张牌：%s", state.LastPlayedCard)}
+	playerStatuses := make([]string, 0, len(state.PlayerSequence))
+	for _, playerName := range state.PlayerSequence {
+		playerStatuses = append(playerStatuses, fmt.Sprintf("%s（%d 张牌）", playerName, state.PlayerHandCounts[playerName]))
+	}
+	lines = append(lines, fmt.Sprintf("出牌顺序：%s", strings.Join(playerStatuses, "、")))
+	lines = append(lines, fmt.Sprintf("你的手牌：%s\n", state.CurrentPlayerHand))
+	return strings.Join(lines, "\n")
 }

@@ -26,9 +26,9 @@ func (g *Mahjong) Next(player *database.Player) (consts.StateID, error) {
 	}
 	game := room.Game.(*database.Mahjong)
 	buf := bytes.Buffer{}
-	buf.WriteString("WELCOME TO MAHJONG GAME!!! \n")
-	buf.WriteString(fmt.Sprintf("%s is Banker! \n", database.GetPlayer(int64(room.Banker)).Name))
-	buf.WriteString(fmt.Sprintf("Your Tiles: %s\n", game.Game.GetPlayerTiles(int(player.ID))))
+	buf.WriteString("欢迎来到麻将游戏！\n")
+	buf.WriteString(fmt.Sprintf("本局庄家：%s\n", database.GetPlayer(int64(room.Banker)).Name))
+	buf.WriteString(fmt.Sprintf("你的手牌：%s\n", game.Game.GetPlayerTiles(int(player.ID))))
 	_ = player.WriteString(buf.String())
 	loopCount := 0
 	for {
@@ -73,7 +73,7 @@ func (g *Mahjong) Exit(player *database.Player) consts.StateID {
 	for _, playerId := range game.PlayerIDs {
 		game.States[playerId] <- stateWaiting
 	}
-	database.Broadcast(player.RoomID, fmt.Sprintf("player %s exit, game over! \n", player.Name))
+	database.Broadcast(player.RoomID, fmt.Sprintf("玩家 %s 已退出，本局结束。\n", player.Name))
 	database.LeaveRoom(player.RoomID, player.ID)
 	room.Game = nil
 	room.State = consts.RoomStateWaiting
@@ -87,7 +87,7 @@ func handleTake(room *database.Room, player *database.Player, game *database.Mah
 		return nil
 	}
 	if game.Game.Deck().NoTiles() {
-		database.Broadcast(room.ID, "Game over but no winners!!! \n")
+		database.Broadcast(room.ID, "牌堆已摸完，本局流局。\n")
 		room.Game = nil
 		room.State = consts.RoomStateWaiting
 		for _, playerId := range game.PlayerIDs {
@@ -136,7 +136,7 @@ func handlePlayMahjong(room *database.Room, player *database.Player, game *datab
 	if win.CanWin(p.Hand(), p.GetShowCardTiles()) {
 		tiles := p.Tiles()
 		sort.Ints(tiles)
-		database.Broadcast(room.ID, fmt.Sprintf("%s wins! \n%s \n", p.Name(), tile.ToTileString(tiles)))
+		database.Broadcast(room.ID, fmt.Sprintf("%s 胡牌，赢得本局！\n牌型：%s\n", p.Name(), tile.ToTileString(tiles)))
 		room.Game = nil
 		room.Banker = p.ID()
 		room.State = consts.RoomStateWaiting
@@ -163,7 +163,7 @@ func handlePlayMahjong(room *database.Room, player *database.Player, game *datab
 		for _, p := range gameState.CanWin {
 			tiles := append(p.Tiles(), gameState.LastPlayedTile)
 			sort.Ints(tiles)
-			database.Broadcast(room.ID, fmt.Sprintf("%s wins! \n%s \n", p.Name(), tile.ToTileString(tiles)))
+			database.Broadcast(room.ID, fmt.Sprintf("%s 胡牌，赢得本局！\n牌型：%s\n", p.Name(), tile.ToTileString(tiles)))
 		}
 		room.Game = nil
 		room.Banker = gameState.CanWin[rand.Intn(len(gameState.CanWin))].ID()

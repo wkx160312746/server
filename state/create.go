@@ -18,7 +18,7 @@ func (*create) Next(player *database.Player) (consts.StateID, error) {
 	}
 	// 创建房间
 	room := database.CreateRoom(player.ID, gameType)
-	err = player.WriteString(fmt.Sprintf("Create room successful, id : %d\n", room.ID))
+	err = player.WriteString(fmt.Sprintf("房间创建成功，房间 ID：%d\n", room.ID))
 	if err != nil {
 		return 0, player.WriteError(err)
 	}
@@ -36,7 +36,7 @@ func (*create) Exit(_ *database.Player) consts.StateID {
 // 询问游戏类型
 func askForGameType(player *database.Player) (gameType int, err error) {
 	buf := bytes.Buffer{}
-	buf.WriteString("Please select game type\n")
+	buf.WriteString("请选择游戏类型：\n")
 	for _, id := range consts.GameTypesIds {
 		buf.WriteString(fmt.Sprintf("%d.%s\n", id, consts.GameTypes[id]))
 	}
