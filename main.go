@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/ratel-online/core/log"
@@ -20,11 +21,11 @@ var (
 )
 
 func main() {
-	flag.IntVar(&Wsport, "w", 9998, "WebsocketServer Port")
-	flag.IntVar(&Tcpport, "t", 9999, "TcpServer Port")
-	flag.StringVar(&BotAddr, "bot", "", "Bot connection address")
-	flag.StringVar(&BotToken, "bot-token", "", "Bot token")
-	flag.Int64Var(&BotGroup, "bot-group", 0, "Bot group ID")
+	flag.IntVar(&Wsport, "w", envInt("PORT", 9998), "WebsocketServer Port")
+	flag.IntVar(&Tcpport, "t", envInt("TCP_PORT", 9999), "TcpServer Port")
+	flag.StringVar(&BotAddr, "bot", os.Getenv("BOT_ADDR"), "Bot connection address")
+	flag.StringVar(&BotToken, "bot-token", os.Getenv("BOT_TOKEN"), "Bot token")
+	flag.Int64Var(&BotGroup, "bot-group", envInt64("BOT_GROUP", 0), "Bot group ID")
 
 	flag.Parse()
 	// 连接机器人
@@ -50,4 +51,30 @@ func main() {
 
 	server := network.NewTcpServer(":" + strconv.Itoa(Tcpport))
 	log.Panic(server.Serve())
+}
+
+func envInt(name string, fallback int) int {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		log.Errorf("Invalid %s value %q, using %d: %v", name, value, fallback, err)
+		return fallback
+	}
+	return parsed
+}
+
+func envInt64(name string, fallback int64) int64 {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		log.Errorf("Invalid %s value %q, using %d: %v", name, value, fallback, err)
+		return fallback
+	}
+	return parsed
 }

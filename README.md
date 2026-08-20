@@ -11,6 +11,29 @@
 ## 社区
 - QQ Group: [948365095](https://qm.qq.com/q/tRPNbC6NtC)
 - Telegram: [ratel-server](https://t.me/ratel_server)
+
+## Zeabur 部署
+
+从 GitHub 导入本仓库后，Zeabur 会自动使用根目录的 `Dockerfile` 构建服务。为服务生成域名，并将公开端口配置为 HTTP；WebSocket 客户端通过以下地址连接：
+
+```text
+wss://<your-domain>/ws
+```
+
+服务支持以下环境变量，命令行参数仍可覆盖对应设置：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `PORT` | `9998` | WebSocket 和健康检查端口 |
+| `TCP_PORT` | `9999` | 原生 TCP 服务端口 |
+| `BOT_ADDR` | 空 | Milky Bot 地址 |
+| `BOT_TOKEN` | 空 | Milky Bot Token |
+| `BOT_GROUP` | `0` | Bot 群 ID |
+
+健康检查地址为 `/healthz`。Zeabur 的 Git 服务只公开一个端口，因此默认仅对外提供 WebSocket；如果还需要公开原生 TCP，请发布 Docker 镜像并在 Zeabur 的 Docker Images 服务中分别配置 HTTP `9998` 和 TCP `9999`。
+
+房间和对局数据保存在进程内存中，服务重启后不会保留，并且应保持单实例运行。
+
 ## 玩法介绍
 ### 模式
 - 经典版斗地主模式

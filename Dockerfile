@@ -1,5 +1,5 @@
 # 构建阶段
-FROM golang:1.17-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # 设置工作目录
 WORKDIR /app
@@ -45,12 +45,12 @@ RUN chown -R ratel:ratel /app
 # 切换到非root用户
 USER ratel
 
-# 暴露端口
-EXPOSE 9998 9999
+# Zeabur Git services expose one public port. TCP still listens internally on 9999.
+EXPOSE 9998
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD nc -z localhost 9998 && nc -z localhost 9999 || exit 1
+  CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-9998}/healthz" || exit 1
 
 # 启动应用
-CMD ["./ratel-server"] 
+CMD ["./ratel-server"]
