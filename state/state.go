@@ -53,6 +53,10 @@ func Run(player *database.Player) {
 		}
 		state := states[player.GetState()]
 		stateId, err := state.Next(player)
+		if player.IsExpired() {
+			log.Infof("player %s reconnect grace period expired.\n", player)
+			break
+		}
 		if err != nil {
 			if err1, ok := err.(consts.Error); ok {
 				if err1.Exit {

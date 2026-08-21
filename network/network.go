@@ -21,10 +21,7 @@ func handle(rwc protocol.ReadWriteCloser) error {
 	// 给新进入的用户分配资源
 	c := network.Wrapper(rwc)
 	defer func() {
-		err := c.Close()
-		if err != nil {
-			log.Error(err)
-		}
+		_ = c.Close()
 	}()
 	log.Info("new player connected! ")
 	authInfo, err := loginAuth(c)
@@ -32,11 +29,23 @@ func handle(rwc protocol.ReadWriteCloser) error {
 		_ = c.Write(protocol.ErrorPacket(err))
 		return err
 	}
-	player := database.Connected(c, authInfo)
+	player, resumed, err := database.Connected(c, authInfo)
+	if err != nil {
+		_ = c.Write(protocol.ErrorPacket(err))
+		return err
+	}
 	log.Infof("player auth accessed, ip %s, %d:%s\n", player.IP, player.ID, authInfo.Name)
-	go state.Run(player)
-	defer player.Offline()
-	return player.Listening()
+	if resumed {
+		if player.RoomID > 0 {
+			_ = player.WriteString("连接已恢复，你已回到原房间和对局。\n")
+		} else {
+			_ = player.WriteString("连接已恢复，正在继续之前的会话。\n")
+		}
+	} else {
+		go state.Run(player)
+	}
+	defer database.Disconnected(player, c)
+	return player.Listening(c)
 }
 
 // 登陆验签

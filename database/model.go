@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -18,6 +19,8 @@ import (
 )
 
 const initialRune = 'A'
+
+var errPlayerOffline = errors.New("player is offline")
 
 type runeSequence struct {
 	currentRune rune
@@ -63,66 +66,76 @@ type Player struct {
 	RoomID int64  `json:"roomId"`
 	Role   Role   `json:"role"`
 
-	conn   *network.Conn
-	data   chan *protocol.Packet
-	read   bool
-	state  consts.StateID
-	online bool
+	connectionMu    sync.RWMutex
+	writeMu         sync.Mutex
+	sessionID       int64
+	conn            *network.Conn
+	connectionEpoch uint64
+	reconnectUntil  time.Time
+	done            chan struct{}
+	data            chan *protocol.Packet
+	read            bool
+	state           consts.StateID
+	online          bool
+	expired         bool
 }
 
 func (p *Player) Write(bytes []byte) error {
-	return p.conn.Write(protocol.Packet{
+	return p.writePacket(protocol.Packet{
 		Body: bytes,
 	})
 }
 
 func (p *Player) IsOnline() bool {
+	p.connectionMu.RLock()
+	defer p.connectionMu.RUnlock()
 	return p.online
 }
 
-func (p *Player) Offline() {
-	p.online = false
-	_ = p.conn.Close()
-	close(p.data)
-	room := getRoom(p.RoomID)
-	if room != nil {
-		room.Lock()
-		defer room.Unlock()
-		broadcast(room, fmt.Sprintf("%s 已断开连接。\n", p.Name))
-		if room.State == consts.RoomStateWaiting {
-			leaveRoom(room, p)
-		}
-		roomCancel(room)
-	}
+func (p *Player) IsExpired() bool {
+	p.connectionMu.RLock()
+	defer p.connectionMu.RUnlock()
+	return p.expired
 }
 
-func (p *Player) Listening() error {
+func (p *Player) IsRecoverable() bool {
+	p.connectionMu.RLock()
+	defer p.connectionMu.RUnlock()
+	return !p.online && !p.expired && time.Now().Before(p.reconnectUntil)
+}
+
+func (p *Player) Listening(conn *network.Conn) error {
 	loopCount := 0
 	for {
 		loopCount++
 		if loopCount%1000 == 0 {
-			log.Infof("[Player.Listening] Player %d loop count: %d, online: %v\n", p.ID, loopCount, p.online)
+			log.Infof("[Player.Listening] Player %d loop count: %d, online: %v\n", p.ID, loopCount, p.IsOnline())
 		}
-		pack, err := p.conn.Read()
+		pack, err := conn.Read()
 		if err != nil {
 			log.Error(err)
 			return err
 		}
-		if p.read {
-			p.data <- pack
+		p.connectionMu.RLock()
+		isCurrentConnection := p.conn == conn && p.online && !p.expired
+		reading := p.read
+		data := p.data
+		p.connectionMu.RUnlock()
+		if isCurrentConnection && reading {
+			data <- pack
 		}
 	}
 }
 
 // 向客户端发生消息
 func (p *Player) WriteString(data string) error {
-	return p.conn.Write(protocol.Packet{
+	return p.writePacket(protocol.Packet{
 		Body: []byte(data),
 	})
 }
 
 func (p *Player) WriteObject(data interface{}) error {
-	return p.conn.Write(protocol.Packet{
+	return p.writePacket(protocol.Packet{
 		Body: json.Marshal(data),
 	})
 }
@@ -131,9 +144,23 @@ func (p *Player) WriteError(err error) error {
 	if err == consts.ErrorsExist {
 		return err
 	}
-	return p.conn.Write(protocol.Packet{
+	return p.writePacket(protocol.Packet{
 		Body: []byte(err.Error() + "\n"),
 	})
+}
+
+func (p *Player) writePacket(packet protocol.Packet) error {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+
+	p.connectionMu.RLock()
+	conn := p.conn
+	online := p.online && !p.expired
+	p.connectionMu.RUnlock()
+	if !online || conn == nil {
+		return errPlayerOffline
+	}
+	return conn.Write(packet)
 }
 
 func (p *Player) AskForPacket(timeout ...time.Duration) (*protocol.Packet, error) {
@@ -147,11 +174,17 @@ func (p *Player) askForPacket(timeout ...time.Duration) (*protocol.Packet, error
 	if len(timeout) > 0 {
 		select {
 		case packet = <-p.data:
+		case <-p.done:
+			return nil, consts.ErrorsChanClosed
 		case <-time.After(timeout[0]):
 			return nil, consts.ErrorsTimeout
 		}
 	} else {
-		packet = <-p.data
+		select {
+		case packet = <-p.data:
+		case <-p.done:
+			return nil, consts.ErrorsChanClosed
+		}
 	}
 	if packet == nil {
 		return nil, consts.ErrorsChanClosed
@@ -196,12 +229,16 @@ func (p *Player) AskForStringWithoutTransaction(timeout ...time.Duration) (strin
 }
 
 func (p *Player) StartTransaction() {
+	p.connectionMu.Lock()
 	p.read = true
+	p.connectionMu.Unlock()
 	_ = p.WriteString(consts.IsStart)
 }
 
 func (p *Player) StopTransaction() {
+	p.connectionMu.Lock()
 	p.read = false
+	p.connectionMu.Unlock()
 	_ = p.WriteString(consts.IsStop)
 }
 
@@ -214,12 +251,54 @@ func (p *Player) GetState() consts.StateID {
 }
 
 func (p *Player) Conn(conn *network.Conn) {
+	p.connectionMu.Lock()
+	defer p.connectionMu.Unlock()
 	p.conn = conn
 	p.data = make(chan *protocol.Packet, 8)
+	p.done = make(chan struct{})
+	p.connectionEpoch++
 	p.online = true
 }
 
-func (p Player) Model() model.Player {
+func (p *Player) Resume(conn *network.Conn) bool {
+	p.connectionMu.Lock()
+	defer p.connectionMu.Unlock()
+	if p.online || p.expired || time.Now().After(p.reconnectUntil) {
+		return false
+	}
+	p.conn = conn
+	p.IP = conn.IP()
+	p.online = true
+	p.reconnectUntil = time.Time{}
+	p.connectionEpoch++
+	return true
+}
+
+func (p *Player) Disconnect(conn *network.Conn, gracePeriod time.Duration) (uint64, bool) {
+	p.connectionMu.Lock()
+	defer p.connectionMu.Unlock()
+	if p.conn != conn || !p.online {
+		return 0, false
+	}
+	p.conn = nil
+	p.online = false
+	p.reconnectUntil = time.Now().Add(gracePeriod)
+	p.connectionEpoch++
+	return p.connectionEpoch, true
+}
+
+func (p *Player) Expire(epoch uint64) bool {
+	p.connectionMu.Lock()
+	defer p.connectionMu.Unlock()
+	if p.connectionEpoch != epoch || p.online || p.expired {
+		return false
+	}
+	p.expired = true
+	close(p.done)
+	return true
+}
+
+func (p *Player) Model() model.Player {
 	modelPlayer := model.Player{
 		ID:   p.ID,
 		Name: p.Name,
@@ -233,7 +312,7 @@ func (p Player) Model() model.Player {
 	return modelPlayer
 }
 
-func (p Player) String() string {
+func (p *Player) String() string {
 	return fmt.Sprintf("%s[%d]", p.Name, p.ID)
 }
 

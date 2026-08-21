@@ -2,10 +2,17 @@ package network
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/ratel-online/core/log"
 	"github.com/ratel-online/core/protocol"
+)
+
+const (
+	websocketPongWait   = 70 * time.Second
+	websocketPingPeriod = 25 * time.Second
+	websocketWriteWait  = 10 * time.Second
 )
 
 type Websocket struct {
@@ -44,6 +51,28 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 		log.Error(err)
 		return
 	}
+	_ = conn.SetReadDeadline(time.Now().Add(websocketPongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(websocketPongWait))
+	})
+
+	pingDone := make(chan struct{})
+	defer close(pingDone)
+	go func() {
+		ticker := time.NewTicker(websocketPingPeriod)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				deadline := time.Now().Add(websocketWriteWait)
+				if err := conn.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
+					return
+				}
+			case <-pingDone:
+				return
+			}
+		}
+	}()
 	err = handle(protocol.NewWebsocketReadWriteCloser(conn))
 	if err != nil {
 		log.Error(err)

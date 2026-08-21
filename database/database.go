@@ -1,6 +1,7 @@
 package database
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	stringx "strings"
@@ -19,11 +20,15 @@ import (
 
 var roomIds int64 = 0
 var players = hashmap.New() // 存储连接过服务器的全部用户
+var sessionPlayers = hashmap.New()
 var connPlayers = hashmap.New()
 var rooms = hashmap.New()
 var roomPlayers = hashmap.New()
 var roomSpectators = hashmap.New()
 var roomKickedPlayers = hashmap.New()
+
+const ReconnectGracePeriod = 3 * time.Minute
+
 var roomPropsSetter = map[string]func(r *Room, v string){
 	consts.RoomPropsSkill: func(r *Room, v string) {
 		r.EnableSkill = v == "on"
@@ -83,23 +88,82 @@ func init() {
 			}
 			time.Sleep(1 * time.Minute)
 			rooms.Foreach(func(e *hashmap.Entry) {
-				roomCancel(e.Value().(*Room))
+				room := e.Value().(*Room)
+				room.Lock()
+				defer room.Unlock()
+				roomCancel(room)
 			})
 		}
 	})
 }
 
-func Connected(conn *network.Conn, info *modelx.AuthInfo) *Player {
-	player := &Player{
-		ID:     conn.ID(),
-		IP:     conn.IP(),
-		Name:   strings.Desensitize(info.Name),
-		Amount: 2000,
+func Connected(conn *network.Conn, info *modelx.AuthInfo) (*Player, bool, error) {
+	name := strings.Desensitize(info.Name)
+	sessionID := info.ID
+	if sessionID <= 0 {
+		sessionID = conn.ID()
 	}
-	player.Conn(conn)                  // 初始化play对象
-	players.Set(conn.ID(), player)     // 写入用户池
+	if value, ok := sessionPlayers.Get(sessionID); ok {
+		existing := value.(*Player)
+		if existing.Name != name || !existing.Resume(conn) {
+			return nil, false, consts.ErrorsAuthFail
+		}
+		connPlayers.Set(conn.ID(), existing)
+		return existing, true, nil
+	}
+
+	player := &Player{
+		ID:        conn.ID(),
+		IP:        conn.IP(),
+		Name:      name,
+		Amount:    2000,
+		sessionID: sessionID,
+	}
+	player.Conn(conn)              // 初始化play对象
+	players.Set(player.ID, player) // 写入用户池
+	sessionPlayers.Set(sessionID, player)
 	connPlayers.Set(conn.ID(), player) // 写入连接用户池
-	return player
+	return player, false, nil
+}
+
+func Disconnected(player *Player, conn *network.Conn) {
+	epoch, disconnected := player.Disconnect(conn, ReconnectGracePeriod)
+	connPlayers.Del(conn.ID())
+	if !disconnected {
+		return
+	}
+
+	room := getRoom(player.RoomID)
+	if room != nil {
+		room.Lock()
+		broadcast(room, fmt.Sprintf("%s 已断开连接，可在 %d 分钟内自动恢复。\n", player.Name, int(ReconnectGracePeriod.Minutes())))
+		room.Unlock()
+	}
+
+	time.AfterFunc(ReconnectGracePeriod, func() {
+		if !player.Expire(epoch) {
+			return
+		}
+		deletePlayerSession(player)
+		room := getRoom(player.RoomID)
+		if room == nil {
+			players.Del(player.ID)
+			return
+		}
+		room.Lock()
+		defer room.Unlock()
+		if room.State == consts.RoomStateWaiting {
+			leaveRoom(room, player)
+			players.Del(player.ID)
+			broadcast(room, fmt.Sprintf("%s 断线超时，已离开房间。\n", player.Name))
+		}
+	})
+}
+
+func deletePlayerSession(player *Player) {
+	if value, ok := sessionPlayers.Get(player.sessionID); ok && value.(*Player) == player {
+		sessionPlayers.Del(player.sessionID)
+	}
 }
 
 func CreateRoom(creator int64, t int) *Room {
@@ -437,6 +501,36 @@ func leaveRoom(room *Room, player *Player) {
 }
 
 func roomCancel(room *Room) {
+	if room.State == consts.RoomStateWaiting {
+		expiredPlayerIDs := make([]int64, 0)
+		for id := range getRoomPlayers(room.ID) {
+			player := getPlayer(id)
+			if player == nil || player.IsExpired() {
+				expiredPlayerIDs = append(expiredPlayerIDs, id)
+			}
+		}
+		for id := range getRoomSpectators(room.ID) {
+			player := getPlayer(id)
+			if player == nil || player.IsExpired() {
+				expiredPlayerIDs = append(expiredPlayerIDs, id)
+			}
+		}
+		for _, id := range expiredPlayerIDs {
+			player := getPlayer(id)
+			if player == nil {
+				if _, ok := getRoomPlayers(room.ID)[id]; ok {
+					delete(getRoomPlayers(room.ID), id)
+					room.Players--
+				}
+				delete(getRoomSpectators(room.ID), id)
+				continue
+			}
+			leaveRoom(room, player)
+			players.Del(id)
+			deletePlayerSession(player)
+		}
+	}
+
 	if room.ActiveTime.Add(24 * time.Hour).Before(time.Now()) {
 		log.Infof("room %d is timeout 24 hours, removed.\n", room.ID)
 		deleteRoom(room)
@@ -445,14 +539,16 @@ func roomCancel(room *Room) {
 	living := false
 	playerIds := getRoomPlayers(room.ID)
 	for id := range playerIds {
-		if getPlayer(id).online {
+		player := getPlayer(id)
+		if player != nil && (player.IsOnline() || player.IsRecoverable()) {
 			living = true
 			break
 		}
 	}
 	spectatorIds := getRoomSpectators(room.ID)
 	for id := range spectatorIds {
-		if getPlayer(id).online {
+		player := getPlayer(id)
+		if player != nil && (player.IsOnline() || player.IsRecoverable()) {
 			living = true
 			break
 		}
