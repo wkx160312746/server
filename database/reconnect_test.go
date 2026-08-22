@@ -16,13 +16,27 @@ type reconnectTestTransport struct {
 	mu     sync.Mutex
 	closed bool
 	ip     string
+	reads  chan *protocol.Packet
+	writes []protocol.Packet
 }
 
-func (*reconnectTestTransport) Read() (*protocol.Packet, error) {
-	return nil, errors.New("not implemented")
+func (t *reconnectTestTransport) Read() (*protocol.Packet, error) {
+	if t.reads == nil {
+		return nil, errors.New("not implemented")
+	}
+	packet, ok := <-t.reads
+	if !ok {
+		return nil, errors.New("connection closed")
+	}
+	return packet, nil
 }
 
-func (*reconnectTestTransport) Write(protocol.Packet) error { return nil }
+func (t *reconnectTestTransport) Write(packet protocol.Packet) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.writes = append(t.writes, packet)
+	return nil
+}
 
 func (t *reconnectTestTransport) Close() error {
 	t.mu.Lock()
@@ -32,6 +46,15 @@ func (t *reconnectTestTransport) Close() error {
 }
 
 func (t *reconnectTestTransport) IP() string { return t.ip }
+
+func (t *reconnectTestTransport) lastWrite() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.writes) == 0 {
+		return ""
+	}
+	return t.writes[len(t.writes)-1].String()
+}
 
 func TestConnectedResumesOfflinePlayer(t *testing.T) {
 	sessionID := time.Now().UnixNano()
@@ -98,6 +121,28 @@ func TestPlayerCannotResumeAfterGracePeriod(t *testing.T) {
 	}
 }
 
+func TestRestoreInteractionStateAfterReconnect(t *testing.T) {
+	firstTransport := &reconnectTestTransport{ip: "first"}
+	firstConn := network.Wrapper(firstTransport)
+	player := &Player{ID: 42, Name: "alice"}
+	player.Conn(firstConn)
+	player.StartTransaction()
+
+	if _, ok := player.Disconnect(firstConn, time.Minute); !ok {
+		t.Fatal("disconnect failed")
+	}
+	secondTransport := &reconnectTestTransport{ip: "second"}
+	if !player.Resume(network.Wrapper(secondTransport)) {
+		t.Fatal("resume failed")
+	}
+	if err := player.RestoreInteractionState(); err != nil {
+		t.Fatal(err)
+	}
+	if got := secondTransport.lastWrite(); got != consts.IsStart {
+		t.Fatalf("restored interaction state = %q, want %q", got, consts.IsStart)
+	}
+}
+
 func TestDeletePlayerSessionKeepsReplacement(t *testing.T) {
 	const sessionID int64 = 99112233
 	oldPlayer := &Player{sessionID: sessionID}
@@ -109,5 +154,66 @@ func TestDeletePlayerSessionKeepsReplacement(t *testing.T) {
 	value, ok := sessionPlayers.Get(sessionID)
 	if !ok || value.(*Player) != replacement {
 		t.Fatal("cleaning up an expired player removed its replacement session")
+	}
+}
+
+func TestTexasPlayerCanChatOutsideBettingTurn(t *testing.T) {
+	senderTransport := &reconnectTestTransport{ip: "sender", reads: make(chan *protocol.Packet, 1)}
+	recipientTransport := &reconnectTestTransport{ip: "recipient"}
+	senderConn := network.Wrapper(senderTransport)
+	recipientConn := network.Wrapper(recipientTransport)
+	senderSession := time.Now().UnixNano()
+	recipientSession := senderSession + 1
+
+	sender, _, err := Connected(senderConn, &model.AuthInfo{ID: senderSession, Name: "alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipient, _, err := Connected(recipientConn, &model.AuthInfo{ID: recipientSession, Name: "bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	room := CreateRoom(sender.ID, consts.GameTypeTexas)
+	defer func() {
+		deleteRoom(room)
+		players.Del(sender.ID)
+		players.Del(recipient.ID)
+		sessionPlayers.Del(senderSession)
+		sessionPlayers.Del(recipientSession)
+		connPlayers.Del(senderConn.ID())
+		connPlayers.Del(recipientConn.ID())
+	}()
+	if err := JoinRoom(room.ID, sender.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := JoinRoom(room.ID, recipient.ID); err != nil {
+		t.Fatal(err)
+	}
+	room.State = consts.RoomStateRunning
+	sender.State(consts.StateTexasGame)
+
+	listenDone := make(chan error, 1)
+	go func() {
+		listenDone <- sender.Listening(senderConn)
+	}()
+	senderTransport.reads <- &protocol.Packet{Body: []byte("大家好")}
+
+	want := ">> alice [房主] 说：大家好\n"
+	deadline := time.Now().Add(time.Second)
+	for recipientTransport.lastWrite() != want && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := recipientTransport.lastWrite(); got != want {
+		t.Fatalf("recipient message from idle WebSocket input = %q, want %q", got, want)
+	}
+	if got := len(sender.data); got != 0 {
+		t.Fatalf("idle chat entered the betting input channel, queued packets = %d", got)
+	}
+
+	close(senderTransport.reads)
+	select {
+	case <-listenDone:
+	case <-time.After(time.Second):
+		t.Fatal("listener did not stop after transport closed")
 	}
 }

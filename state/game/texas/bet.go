@@ -21,6 +21,8 @@ func bet(player *database.Player, game *database.Texas) error {
 	if texasPlayer.Folded || texasPlayer.AllIn {
 		return nextPlayer(player, game, stateBet)
 	}
+	player.StartTransaction()
+	defer player.StopTransaction()
 
 	database.Broadcast(player.RoomID, fmt.Sprintf("轮到 %s 下注。\n", player.Name), player.ID)
 
@@ -51,7 +53,7 @@ func bet(player *database.Player, game *database.Texas) error {
 		}
 		buf.WriteString("请选择操作（call/raise/fold/check/allin）：\n")
 		_ = player.WriteString(buf.String())
-		ans, err := player.AskForString(timeout)
+		ans, err := player.AskForStringWithoutTransaction(timeout)
 		if err != nil {
 			ans = "fold"
 		}

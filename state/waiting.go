@@ -165,7 +165,7 @@ func (s *waiting) waitingForStart(player *database.Player, room *database.Room) 
 		}
 
 		if room.EnableChat {
-			if room.State == consts.RoomStateRunning {
+			if room.State == consts.RoomStateRunning && room.Type != consts.GameTypeTexas {
 				_ = player.WriteString(fmt.Sprintf("%s\n", consts.ErrorsChatUnopenedDuringGame.Error()))
 			} else {
 				database.BroadcastChat(player, fmt.Sprintf("%s [%s] 说：%s\n", player.Name, database.RoleName(player.Role), signal))

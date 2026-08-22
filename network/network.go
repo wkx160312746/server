@@ -41,6 +41,7 @@ func handle(rwc protocol.ReadWriteCloser) error {
 		} else {
 			_ = player.WriteString("连接已恢复，正在继续之前的会话。\n")
 		}
+		_ = player.RestoreInteractionState()
 	} else {
 		go state.Run(player)
 	}

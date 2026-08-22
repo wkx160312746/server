@@ -121,10 +121,31 @@ func (p *Player) Listening(conn *network.Conn) error {
 		reading := p.read
 		data := p.data
 		p.connectionMu.RUnlock()
-		if isCurrentConnection && reading {
-			data <- pack
+		if !isCurrentConnection {
+			continue
 		}
+		if reading {
+			data <- pack
+			continue
+		}
+		p.handleIdlePacket(pack)
 	}
+}
+
+func (p *Player) handleIdlePacket(packet *protocol.Packet) bool {
+	if p.GetState() != consts.StateTexasGame {
+		return false
+	}
+	room := getRoom(p.RoomID)
+	if room == nil || room.Type != consts.GameTypeTexas || room.State != consts.RoomStateRunning || !room.EnableChat {
+		return false
+	}
+	message := strings.TrimSpace(packet.String())
+	if message == "" {
+		return false
+	}
+	BroadcastChat(p, fmt.Sprintf("%s [%s] 说：%s\n", p.Name, RoleName(p.Role), message))
+	return true
 }
 
 // 向客户端发生消息
@@ -242,11 +263,25 @@ func (p *Player) StopTransaction() {
 	_ = p.WriteString(consts.IsStop)
 }
 
+func (p *Player) RestoreInteractionState() error {
+	p.connectionMu.RLock()
+	reading := p.read
+	p.connectionMu.RUnlock()
+	if reading {
+		return p.WriteString(consts.IsStart)
+	}
+	return p.WriteString(consts.IsStop)
+}
+
 func (p *Player) State(s consts.StateID) {
+	p.connectionMu.Lock()
+	defer p.connectionMu.Unlock()
 	p.state = s
 }
 
 func (p *Player) GetState() consts.StateID {
+	p.connectionMu.RLock()
+	defer p.connectionMu.RUnlock()
 	return p.state
 }
 
